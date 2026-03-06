@@ -1,0 +1,138 @@
+# Configuration générale d'ESPHome
+esphome:
+  name: compteurs-eau-et-gaz
+  friendly_name: "Compteurs d'eau et de gaz"
+  project:
+    name: rench.compteurs-eau-et-gaz
+    version: 1.0.0
+  on_boot:
+    then:
+      - lambda: |-
+          id(eau_compteur_m3).publish_state(id(eau_compteur_litres) * 0.001);
+          id(gaz_compteur_m3).publish_state(id(gaz_compteur_litres) * 0.01);
+
+# Configuration matérielle de la carte ESP32
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Configuration du réseau Wi-Fi
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Configuration du journal de débogage
+logger:
+  level: INFO
+
+# Configuration de l'API pour la communication avec Home Assistant
+api:
+  encryption:
+    key: !secret compteurs-eau-et-gaz_api-key
+
+# Configuration des mises à jour OTA (Over The Air)
+ota:
+  - platform: esphome
+    password: !secret compteurs-eau-et-gaz_ota-password
+
+# Déclaration des variables globales
+globals:
+  - id: eau_compteur_litres
+    type: float
+    initial_value: "0"
+    restore_value: True
+  - id: gaz_compteur_litres
+    type: float
+    initial_value: "0"
+    restore_value: True
+
+# Configuration des capteurs binaires
+binary_sensor:
+  - platform: gpio
+    name: "Impulsion d'eau"
+    id: pulse_eau
+    internal: True
+    pin:
+      number: GPIO25
+      mode: INPUT_PULLUP
+      inverted: True
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 990ms
+    on_press:
+      then:
+        - lambda: |-
+            id(eau_compteur_litres) += 1;
+            id(eau_compteur_m3).publish_state(id(eau_compteur_litres) * 0.001);
+  - platform: gpio
+    name: "Impulsion de gaz"
+    id: pulse_gaz
+    internal: True
+    pin:
+      number: GPIO14
+      mode: INPUT_PULLUP
+      inverted: True
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 990ms
+    on_press:
+      then:
+        - lambda: |-
+            id(gaz_compteur_litres) += 1;
+            id(gaz_compteur_m3).publish_state(id(gaz_compteur_litres) * 0.01);
+
+# Configuration des capteurs
+sensor:
+  - platform: template
+    name: "Consommation d'eau"
+    id: eau_compteur_m3
+    unit_of_measurement: m³
+    accuracy_decimals: 3
+    state_class: total_increasing
+    device_class: water
+  - platform: template
+    name: "Consommation de gaz"
+    id: gaz_compteur_m3
+    unit_of_measurement: m³
+    accuracy_decimals: 2
+    state_class: total_increasing
+    device_class: gas
+  - platform: wifi_signal
+    name: "WiFi – Atténuation"
+    id: wifi_signal_db
+    update_interval: 60s
+  - platform: copy
+    source_id: wifi_signal_db
+    id: wifi_signal_pct
+    name: "WiFi – Force du signal"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+
+# Configuration des capteurs textuels
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "Adresse IP"
+    ssid:
+      name: "Réseau"
+
+# Configuration des boutons
+button:
+  - platform: restart
+    name: "Redémarrer"
+  - platform: template
+    name: "Incrémenter l'eau"
+    on_press:
+      then:
+        - lambda: |-
+            id(eau_compteur_litres) += 1;
+            id(eau_compteur_m3).publish_state(id(eau_compteur_litres) * 0.001);
+  - platform: template
+    name: "Incrémenter le gaz"
+    on_press:
+      then:
+        - lambda: |-
+            id(gaz_compteur_litres) += 1;
+            id(gaz_compteur_m3).publish_state(id(gaz_compteur_litres) * 0.01);
